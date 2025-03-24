@@ -2,8 +2,10 @@ from flask import Flask
 from config import db
 from routes.ambulance_routes import ambulance_bp
 from routes.inventory_routes import inventory_bp
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)  # Enables CORS for all routes
 
 # Register Blueprints
 app.register_blueprint(ambulance_bp, url_prefix="/ambulance")

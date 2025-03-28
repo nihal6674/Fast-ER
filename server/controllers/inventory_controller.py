@@ -6,16 +6,28 @@ def add_inventory_item(ambulance_id, item):
     for field in required_fields:
         if field not in item:
             return jsonify({"error": f"{field} is required"}), 400
-    
+
     if not isinstance(item["quantity"], int) or item["quantity"] < 0:
         return jsonify({"error": "Quantity must be a positive integer"}), 400
 
-    inventory_collection.update_one(
-        {"ambulance_id": ambulance_id},
-        {"$push": {"items": item}},
-        upsert=True
+    existing_item = inventory_collection.find_one(
+        {"ambulance_id": ambulance_id, "items.id": item["id"]},
+        {"items.$": 1}
     )
-    return jsonify({"message": "Item added successfully"}), 201
+
+    if existing_item:
+        inventory_collection.update_one(
+            {"ambulance_id": ambulance_id, "items.id": item["id"]},
+            {"$inc": {"items.$.quantity": item["quantity"]}}
+        )
+        return jsonify({"message": "Item quantity updated successfully"}), 200
+    else:
+        inventory_collection.update_one(
+            {"ambulance_id": ambulance_id},
+            {"$push": {"items": item}},
+            upsert=True
+        )
+        return jsonify({"message": "Item added successfully"}), 201
 
 def update_inventory_item(ambulance_id, item_id, updated_item):
     result = inventory_collection.update_one(

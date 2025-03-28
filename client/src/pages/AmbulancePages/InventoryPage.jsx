@@ -3,6 +3,7 @@ import { getInventory, addInventoryItem, updateInventoryItem, deleteInventoryIte
 import { useAuth } from "../../context/AuthContext";
 import { BrowserMultiFormatReader } from "@zxing/library";
 
+
 const InventoryPage = () => {
     const { ambulance } = useAuth();
     const ambulanceId = ambulance?.ambulance_id;
@@ -11,6 +12,10 @@ const InventoryPage = () => {
     const [newItem, setNewItem] = useState({ id: "", rfid_id: "", name: "", code: "", type: "", quantity: "" });
     const [message, setMessage] = useState("");
     const [isScanning, setIsScanning] = useState(false);
+
+    // Modal state
+    const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+    const [selectedItem, setSelectedItem] = useState(null);
 
     useEffect(() => {
         if (ambulanceId) {
@@ -46,6 +51,26 @@ const InventoryPage = () => {
         }
     };
 
+    const handleOpenUpdateModal = (item) => {
+        setSelectedItem(item);
+        setIsUpdateModalOpen(true);
+    };
+
+    const handleUpdateInputChange = (e) => {
+        setSelectedItem({ ...selectedItem, [e.target.name]: e.target.value });
+    };
+
+    const handleUpdateItem = async () => {
+        const response = await updateInventoryItem(ambulanceId, selectedItem.id, selectedItem);
+        if (!response.error) {
+            setMessage("✅ Item updated successfully!");
+            fetchInventory();
+            setIsUpdateModalOpen(false);
+        } else {
+            setMessage(response.error);
+        }
+    };
+
     const handleDeleteItem = async (itemId) => {
         const response = await deleteInventoryItem(ambulanceId, itemId);
         if (!response.error) {
@@ -56,23 +81,31 @@ const InventoryPage = () => {
         }
     };
 
+
     const startQRScanner = () => {
         setIsScanning(true);
         const codeReader = new BrowserMultiFormatReader();
         codeReader.getVideoInputDevices().then((videoDevices) => {
             if (videoDevices.length > 0) {
-                codeReader.decodeFromVideoDevice(videoDevices[0].deviceId, "qr-video", (result, err) => {
+                codeReader.decodeFromVideoDevice(videoDevices[0].deviceId, "qr-video", async (result, err) => {
                     if (result) {
+                        codeReader.reset();  // Stop scanning immediately
+                        
                         try {
                             const scannedData = JSON.parse(result.text);
-                            setNewItem(scannedData);
-                            setMessage("✅ QR code scanned successfully!");
-                            setIsScanning(false);
-                            codeReader.reset();
+                            const response = await addInventoryItem(ambulanceId, { ...scannedData, quantity: parseInt(scannedData.quantity) });
+    
+                            if (!response.error) {
+                                setMessage("✅ QR code scanned and item added successfully!");
+                                fetchInventory();  // Update only once
+                            } else {
+                                setMessage(response.error);
+                            }
                         } catch (error) {
                             setMessage("❌ Invalid QR Code format.");
-                            setIsScanning(false);
                         }
+                        
+                        setIsScanning(false);
                     }
                 });
             } else {
@@ -84,6 +117,8 @@ const InventoryPage = () => {
             setIsScanning(false);
         });
     };
+    
+
 
     return (
         <div className="flex flex-col items-center p-6 bg-gray-100 min-h-screen">
@@ -107,7 +142,10 @@ const InventoryPage = () => {
                     <input type="number" name="quantity" placeholder="Quantity" value={newItem.quantity} onChange={handleInputChange} className="p-2 border rounded" />
                 </div>
                 <button onClick={handleAddItem} className="mt-3 w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition-all">Add Item</button>
+
                 <button onClick={startQRScanner} className="mt-3 w-full bg-green-500 text-white p-2 rounded hover:bg-green-600 transition-all">Scan QR Code</button>
+
+
             </div>
 
             {isScanning && (
@@ -119,6 +157,7 @@ const InventoryPage = () => {
                     </div>
                 </div>
             )}
+
 
             {/* Inventory List */}
             <div className="w-full max-w-lg">
@@ -132,7 +171,14 @@ const InventoryPage = () => {
                                     <p>RFID: {item.rfid_id || "N/A"} | Code: {item.code || "N/A"} | Type: {item.type}</p>
                                     <p>Quantity: {item.quantity}</p>
                                 </div>
-                                <button onClick={() => handleDeleteItem(item.id)} className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 transition-all">❌</button>
+                                <div className="flex gap-2">
+                                    <button onClick={() => handleOpenUpdateModal(item)} className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600 transition-all">
+                                        ✏️
+                                    </button>
+                                    <button onClick={() => handleDeleteItem(item.id)} className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 transition-all">
+                                        ❌
+                                    </button>
+                                </div>
                             </li>
                         ))}
                     </ul>
@@ -140,6 +186,26 @@ const InventoryPage = () => {
                     <p className="text-center text-gray-600">No items found.</p>
                 )}
             </div>
+
+            {/* Update Modal */}
+            {isUpdateModalOpen && selectedItem && (
+                <div className="fixed inset-0 bg-black bg-opacity-30 flex justify-center items-center">
+                    <div className="bg-white p-6 rounded-lg shadow-lg w-96">
+                        <h3 className="text-lg font-semibold mb-4">Update Item</h3>
+                        <div className="grid gap-2">
+                            <input type="text" name="name" value={selectedItem.name} onChange={handleUpdateInputChange} className="p-2 border rounded" />
+                            <input type="text" name="rfid_id" value={selectedItem.rfid_id} onChange={handleUpdateInputChange} className="p-2 border rounded" />
+                            <input type="text" name="code" value={selectedItem.code} onChange={handleUpdateInputChange} className="p-2 border rounded" />
+                            <input type="text" name="type" value={selectedItem.type} onChange={handleUpdateInputChange} className="p-2 border rounded" />
+                            <input type="number" name="quantity" value={selectedItem.quantity} onChange={handleUpdateInputChange} className="p-2 border rounded" />
+                        </div>
+                        <div className="flex justify-end gap-2 mt-4">
+                            <button onClick={() => setIsUpdateModalOpen(false)} className="bg-gray-400 text-white px-4 py-2 rounded">Cancel</button>
+                            <button onClick={handleUpdateItem} className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-all">Update</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
